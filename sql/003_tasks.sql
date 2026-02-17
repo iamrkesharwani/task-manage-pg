@@ -7,7 +7,7 @@ CREATE TABLE tasks (
     CHECK (status IN ('Backlog', 'Todo', 'In Progress', 'Done', 'Archived')),
   priority TEXT DEFAULT 'Medium'
     CHECK (priority IN ('Low', 'Medium', 'High', 'Urgent')),
-  assigned_to INTEGER REFERENCES users(id) ON DELETE CASCADE SET NULL,
+  assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
   due_date TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
