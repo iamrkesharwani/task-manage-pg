@@ -7,45 +7,53 @@ const createError = (message, code) => {
   return err;
 };
 
-// --- Create ---
+/** Creates a new project owned by the specified user */
 export const createProject = async (name, user_id) => {
   if (!name) throw createError('Project name is required', 'VALIDATION_ERROR');
   if (!user_id) throw createError('User ID required', 'VALIDATION_ERROR');
+
   const query = `
     INSERT INTO projects (name, user_id)
     VALUES ($1, $2)
     RETURNING *;
   `;
-  const { rows } = await db.query(query, [name, user_id]);
 
-  logger.info({ name, user_id }, 'Project created successfully');
-  return rows[0];
+  try {
+    const { rows } = await db.query(query, [name, user_id]);
+    logger.info({ projectId: rows[0].id, user_id }, 'Project created');
+    return rows[0];
+  } catch (err) {
+    logger.error({ err, user_id }, 'Failed to create project');
+    throw err;
+  }
 };
 
-// --- Read ---
+/** Retrieves a project only if it belongs to the requesting user */
 export const getProject = async (id, user_id) => {
-  if (!id) throw createError('Project ID required', 'VALIDATION_ERROR');
-  if (!user_id) throw createError('User ID required', 'VALIDATION_ERROR');
-  const userProjectQuery = `
-    SELECT id, name, user_id
+  if (!id || !user_id)
+    throw createError('Missing required IDs', 'VALIDATION_ERROR');
+
+  const query = `
+    SELECT id, name, user_id, description
     FROM projects
     WHERE id = $1 AND user_id = $2;
   `;
-  const { rows, rowCount } = await db.query(userProjectQuery, [id, user_id]);
+
+  const { rows, rowCount } = await db.query(query, [id, user_id]);
   if (!rowCount) throw createError('Project not found', 'NOT_FOUND');
 
-  logger.info({ projectId: id }, 'Project found');
+  logger.info({ projectId: id }, 'Project retrieved');
   return rows[0];
 };
 
-// --- Update ---
+/** Updates project fields dynamically based on provided updates object */
 export const updateProject = async (id, user_id, updates) => {
-  if (!id) throw createError('Project ID required', 'VALIDATION_ERROR');
-  if (!user_id) throw createError('User ID required', 'VALIDATION_ERROR');
+  if (!id || !user_id)
+    throw createError('Missing required IDs', 'VALIDATION_ERROR');
 
   const fields = [];
   const values = [];
-  let index = 1;
+  let index = 1; // Tracks SQL parameter position
 
   if (updates.name !== undefined) {
     updates.name = updates.name.trim();
@@ -74,26 +82,38 @@ export const updateProject = async (id, user_id, updates) => {
   try {
     const { rows, rowCount } = await db.query(query, [...values, id, user_id]);
     if (!rowCount) throw createError('Project not found', 'NOT_FOUND');
-    logger.info({ projectId: id }, 'Project udpated');
+
+    logger.info({ projectId: id }, 'Project updated');
     return rows[0];
   } catch (err) {
-    if (err.code === '23505')
+    // 23505 = unique_violation
+    if (err.code === '23505') {
       throw createError(
         'Project name already exists for this user',
         'VALIDATION_ERROR'
       );
+    }
+    logger.error({ err, projectId: id }, 'Project update failed');
     throw err;
   }
 };
 
-// --- Delete ---
+/** Deletes a project record after verifying ownership */
 export const deleteProject = async (id, user_id) => {
-  if (!id) throw createError('Project ID required', 'VALIDATION_ERROR');
-  if (!user_id) throw createError('User ID required', 'VALIDATION_ERROR');
+  if (!id || !user_id)
+    throw createError('Missing required IDs', 'VALIDATION_ERROR');
 
   const query = 'DELETE FROM projects WHERE id = $1 AND user_id = $2;';
-  const { rowCount } = await db.query(query, [id]);
-  if (!rowCount) throw createError('Project not found', 'NOT_FOUND');
-  logger.info({ projectId: id }, 'Project deleted');
-  return { message: 'Project deleted successfully' };
+
+  try {
+    const { rowCount } = await db.query(query, [id, user_id]);
+
+    if (!rowCount) throw createError('Project not found', 'NOT_FOUND');
+
+    logger.info({ projectId: id }, 'Project deleted');
+    return { message: 'Project deleted successfully' };
+  } catch (err) {
+    logger.error({ err, projectId: id }, 'Project deletion failed');
+    throw err;
+  }
 };
